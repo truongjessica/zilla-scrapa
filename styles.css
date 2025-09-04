@@ -130,6 +130,19 @@ body {
     font-style: italic;
 }
 
+.mortgage-notice {
+    background: linear-gradient(135deg, #eff6ff 0%, #f0f9ff 100%);
+    border: 1px solid #bfdbfe;
+    border-radius: var(--radius-md);
+    padding: 16px;
+    margin: 20px auto 0;
+    max-width: 700px;
+    color: #1e40af;
+    font-size: 14px;
+    line-height: 1.5;
+    text-align: left;
+}
+
 /* Input Grid */
 .input-grid {
     display: grid;
@@ -317,10 +330,12 @@ body {
 
 .results-header {
     display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
     margin-bottom: 24px;
     gap: 24px;
+    text-align: center;
 }
 
 .results-summary {

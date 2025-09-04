@@ -13,6 +13,30 @@ class ZillaScraper {
         ];
         this.currentProxyIndex = 0;
         
+        // State-specific interest rates for 30-year fixed mortgages (as of 2024)
+        this.stateInterestRates = {
+            'AL': 7.25, 'AK': 7.35, 'AZ': 7.15, 'AR': 7.30, 'CA': 7.05, 'CO': 7.10, 'CT': 7.20, 'DE': 7.15,
+            'FL': 7.10, 'GA': 7.20, 'HI': 7.40, 'ID': 7.25, 'IL': 7.15, 'IN': 7.20, 'IA': 7.25, 'KS': 7.25,
+            'KY': 7.30, 'LA': 7.35, 'ME': 7.25, 'MD': 7.15, 'MA': 7.10, 'MI': 7.20, 'MN': 7.15, 'MS': 7.35,
+            'MO': 7.25, 'MT': 7.30, 'NE': 7.25, 'NV': 7.20, 'NH': 7.20, 'NJ': 7.15, 'NM': 7.25, 'NY': 7.10,
+            'NC': 7.20, 'ND': 7.30, 'OH': 7.20, 'OK': 7.30, 'OR': 7.15, 'PA': 7.15, 'RI': 7.20, 'SC': 7.25,
+            'SD': 7.30, 'TN': 7.25, 'TX': 7.20, 'UT': 7.20, 'VT': 7.25, 'VA': 7.15, 'WA': 7.10, 'WV': 7.30,
+            'WI': 7.20, 'WY': 7.30, 'DC': 7.15
+        };
+        this.defaultInterestRate = 7.20; // National average fallback
+        
+        // State-specific property tax rates (annual % of home value)
+        this.statePropertyTaxRates = {
+            'AL': 0.41, 'AK': 1.19, 'AZ': 0.62, 'AR': 0.63, 'CA': 0.75, 'CO': 0.51, 'CT': 2.14, 'DE': 0.57,
+            'FL': 0.83, 'GA': 0.89, 'HI': 0.31, 'ID': 0.69, 'IL': 2.27, 'IN': 0.85, 'IA': 1.53, 'KS': 1.42,
+            'KY': 0.86, 'LA': 0.55, 'ME': 1.28, 'MD': 1.06, 'MA': 1.21, 'MI': 1.54, 'MN': 1.12, 'MS': 0.81,
+            'MO': 0.97, 'MT': 0.84, 'NE': 1.73, 'NV': 0.53, 'NH': 2.18, 'NJ': 2.49, 'NM': 0.80, 'NY': 1.68,
+            'NC': 0.84, 'ND': 0.98, 'OH': 1.56, 'OK': 0.90, 'OR': 0.87, 'PA': 1.58, 'RI': 1.53, 'SC': 0.57,
+            'SD': 1.32, 'TN': 0.64, 'TX': 1.69, 'UT': 0.60, 'VT': 1.90, 'VA': 0.82, 'WA': 0.84, 'WV': 0.59,
+            'WI': 1.85, 'WY': 0.62, 'DC': 0.57
+        };
+        this.defaultPropertyTaxRate = 1.10; // National average fallback
+        
         this.initializeEventListeners();
     }
 
@@ -113,6 +137,7 @@ class ZillaScraper {
                     purchasePrice: 'INFO_UNAVAILABLE',
                     downPayment20: 'INFO_UNAVAILABLE',
                     estimatedMortgage: 'INFO_UNAVAILABLE',
+                    totalMonthlyPayment: 'INFO_UNAVAILABLE',
                     beds: 'INFO_UNAVAILABLE',
                     baths: 'INFO_UNAVAILABLE',
                     yearBuilt: 'INFO_UNAVAILABLE',
@@ -139,13 +164,17 @@ class ZillaScraper {
         const parser = new DOMParser();
         const doc = parser.parseFromString(html, 'text/html');
 
+        const address = this.extractAddress(doc);
+        const purchasePrice = this.extractPrice(doc);
+        
         const data = {
             url: url,
             status: 'SUCCESS',
-            address: this.extractAddress(doc),
-            purchasePrice: this.extractPrice(doc),
+            address: address,
+            purchasePrice: purchasePrice,
             downPayment20: 'INFO_UNAVAILABLE',
-            estimatedMortgage: this.extractMortgage(doc),
+            estimatedMortgage: this.calculateMortgage(purchasePrice, address),
+            totalMonthlyPayment: this.calculateTotalMonthlyPayment(purchasePrice, address),
             beds: this.extractBeds(doc),
             baths: this.extractBaths(doc),
             yearBuilt: this.extractYearBuilt(doc),
@@ -259,61 +288,99 @@ class ZillaScraper {
         return 'INFO_UNAVAILABLE';
     }
 
-    extractMortgage(doc) {
-        // First try CSS selectors
-        const selectors = [
-            '[data-testid="monthly-payment"]',
-            '.ds-estimate-value',
-            '.zsg-tooltip-content .zsg-lg',
-            '.mortgage-monthly-payment',
-            '[data-testid="mortgage-calculator"] [data-testid="monthly-payment"]'
-        ];
+    calculateMortgage(purchasePrice, address) {
+        if (!purchasePrice || purchasePrice === 'INFO_UNAVAILABLE') {
+            return 'INFO_UNAVAILABLE';
+        }
         
-        for (const selector of selectors) {
-            const element = doc.querySelector(selector);
-            if (element && element.textContent.includes('$')) {
-                const mortgageText = element.textContent.trim();
-                const mortgageMatch = mortgageText.match(/\$[\d,]+/);
-                if (mortgageMatch) {
-                    const amount = parseInt(mortgageMatch[0].replace(/[$,]/g, ''));
-                    if (amount >= 500 && amount <= 50000) {
-                        return mortgageMatch[0];
-                    }
-                }
+        const price = this.parsePrice(purchasePrice);
+        if (!price || price <= 0) {
+            return 'INFO_UNAVAILABLE';
+        }
+        
+        // Extract state from address to get appropriate interest rate
+        const state = this.extractStateFromAddress(address);
+        const interestRate = this.stateInterestRates[state] || this.defaultInterestRate;
+        
+        // Assume 20% down payment
+        const downPayment = price * 0.20;
+        const loanAmount = price - downPayment;
+        
+        // Calculate monthly payment using mortgage formula
+        // M = P [ r(1 + r)^n ] / [ (1 + r)^n – 1 ]
+        // Where: M = Monthly payment, P = Principal, r = Monthly interest rate, n = Number of payments
+        const monthlyRate = (interestRate / 100) / 12;
+        const numberOfPayments = 30 * 12; // 30 years
+        
+        const monthlyPayment = loanAmount * 
+            (monthlyRate * Math.pow(1 + monthlyRate, numberOfPayments)) / 
+            (Math.pow(1 + monthlyRate, numberOfPayments) - 1);
+        
+        return '$' + Math.round(monthlyPayment).toLocaleString();
+    }
+    
+    calculateTotalMonthlyPayment(purchasePrice, address) {
+        if (!purchasePrice || purchasePrice === 'INFO_UNAVAILABLE') {
+            return 'INFO_UNAVAILABLE';
+        }
+        
+        const price = this.parsePrice(purchasePrice);
+        if (!price || price <= 0) {
+            return 'INFO_UNAVAILABLE';
+        }
+        
+        // Get the pure mortgage payment (P&I only)
+        const mortgagePayment = this.calculateMortgage(purchasePrice, address);
+        if (mortgagePayment === 'INFO_UNAVAILABLE') {
+            return 'INFO_UNAVAILABLE';
+        }
+        
+        const piPayment = this.parsePrice(mortgagePayment);
+        if (!piPayment) return 'INFO_UNAVAILABLE';
+        
+        // Extract state for property tax rate
+        const state = this.extractStateFromAddress(address);
+        const propertyTaxRate = this.statePropertyTaxRates[state] || this.defaultPropertyTaxRate;
+        
+        // Calculate monthly property tax
+        const annualPropertyTax = price * (propertyTaxRate / 100);
+        const monthlyPropertyTax = annualPropertyTax / 12;
+        
+        // Calculate homeowner's insurance (typically 0.3% - 0.5% of home value annually)
+        // Use higher rate for expensive properties
+        const insuranceRate = price > 1000000 ? 0.5 : 0.35; // 0.35% for regular, 0.5% for luxury
+        const annualInsurance = price * (insuranceRate / 100);
+        const monthlyInsurance = annualInsurance / 12;
+        
+        // Total monthly payment = P&I + Taxes + Insurance
+        const totalPayment = piPayment + monthlyPropertyTax + monthlyInsurance;
+        
+        return '$' + Math.round(totalPayment).toLocaleString();
+    }
+    
+    extractStateFromAddress(address) {
+        if (!address || address === 'INFO_UNAVAILABLE') {
+            return null;
+        }
+        
+        // Look for state abbreviation at the end of address (e.g., "CA", "NY", "TX")
+        const stateMatch = address.match(/,\s*([A-Z]{2})\s*\d*$/);
+        if (stateMatch) {
+            return stateMatch[1];
+        }
+        
+        // Fallback: look for state abbreviation anywhere in address
+        const statePattern = /\b([A-Z]{2})\b/g;
+        const matches = address.match(statePattern);
+        if (matches) {
+            // Return the last state abbreviation found
+            const lastMatch = matches[matches.length - 1];
+            if (this.stateInterestRates[lastMatch]) {
+                return lastMatch;
             }
         }
         
-        // Enhanced fallback: search for various payment patterns
-        const text = doc.body.textContent;
-        const mortgagePatterns = [
-            /Est\.?\s*payment[:\s]*\$?([\d,]+)/gi,
-            /Estimated\s*payment[:\s]*\$?([\d,]+)/gi,
-            /Monthly\s*payment[:\s]*\$?([\d,]+)/gi,
-            /Payment[:\s]*\$?([\d,]+)(?:\/mo|per month)/gi,
-            /\$?([\d,]+)\/mo/gi,
-            /Principal\s*&\s*interest[:\s]*\$?([\d,]+)/gi
-        ];
-        
-        const foundPayments = [];
-        for (const pattern of mortgagePatterns) {
-            let match;
-            while ((match = pattern.exec(text)) !== null) {
-                const amount = parseInt(match[1].replace(/,/g, ''));
-                if (amount >= 500 && amount <= 50000) {
-                    foundPayments.push(amount);
-                }
-            }
-        }
-        
-        if (foundPayments.length > 0) {
-            // Return the most common payment amount or the first reasonable one
-            const mostCommon = foundPayments.sort((a,b) => 
-                foundPayments.filter(v => v === a).length - foundPayments.filter(v => v === b).length
-            ).pop();
-            return '$' + mostCommon.toLocaleString();
-        }
-        
-        return 'INFO_UNAVAILABLE';
+        return null; // Will use default rate
     }
 
     extractBeds(doc) {
@@ -642,6 +709,7 @@ class ZillaScraper {
                 <td>${result.purchasePrice}</td>
                 <td>${result.downPayment20}</td>
                 <td>${result.estimatedMortgage}</td>
+                <td>${result.totalMonthlyPayment}</td>
                 <td>${result.beds}</td>
                 <td>${result.baths}</td>
                 <td>${result.yearBuilt}</td>
@@ -656,7 +724,7 @@ class ZillaScraper {
     downloadCsv() {
         const headers = [
             'Address', 'Purchase Price', '20% Down Payment', 
-            'Est. Mortgage', 'Beds', 'Baths', 'Year Built', 'Sqft', 
+            'Est. Mortgage (P&I)', 'Total Monthly (w/ Tax+Ins)', 'Beds', 'Baths', 'Year Built', 'Sqft', 
             'Days Listed', 'Realtor Name', 'URL'
         ];
 
@@ -667,6 +735,7 @@ class ZillaScraper {
                 result.purchasePrice,
                 result.downPayment20,
                 result.estimatedMortgage,
+                result.totalMonthlyPayment,
                 result.beds,
                 result.baths,
                 result.yearBuilt,

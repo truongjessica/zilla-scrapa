@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zilla Scrapa</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400;1,600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="main-content">
+        <div class="container">
+
+            <div class="scraper-main">
+                <div class="section-header">
+                    <h2 class="section-title">Extract Property Data</h2>
+                    <p class="section-subtitle">Upload CSV or paste Zilla URLs to get started</p>
+                </div>
+                
+                <div class="input-grid">
+                    <div class="input-card">
+                        <div class="input-card-header">
+                            <div class="input-icon">📁</div>
+                            <div>
+                                <h3 class="input-title">Upload CSV File</h3>
+                                <p class="input-description">CSV should have a "Links" column with Zilla URLs</p>
+                            </div>
+                        </div>
+                        <div class="file-upload-area">
+                            <input type="file" id="csvFile" accept=".csv" />
+                            <div class="file-upload-placeholder">
+                                <span>Drop your CSV here or click to browse</span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="input-card">
+                        <div class="input-card-header">
+                            <div class="input-icon">📝</div>
+                            <div>
+                                <h3 class="input-title">Paste URLs</h3>
+                                <p class="input-description">Enter URLs separated by spaces or new lines</p>
+                            </div>
+                        </div>
+                        <textarea id="urlText" class="url-textarea" placeholder="https://www.zilla.com/homedetails/123-main-st...
+https://www.zilla.com/homedetails/456-oak-ave..."></textarea>
+                    </div>
+                </div>
+
+                <div class="action-bar">
+                    <button id="startScraping" class="cta-button primary large">
+                        <span class="button-text">Start Scraping</span>
+                        <span class="button-icon">→</span>
+                    </button>
+                    <button id="clearAll" class="cta-button secondary">Clear All</button>
+                </div>
+            </div>
+
+            <div class="progress-section" id="progressSection" style="display: none;">
+                <div class="section-header">
+                    <h2 class="section-title">Processing Properties</h2>
+                    <p class="section-subtitle">Extracting data from your Zilla listings</p>
+                </div>
+                
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <div class="progress-text" id="progressText">0 / 0 completed</div>
+                </div>
+                
+                <div class="status-log-container">
+                    <div class="status-log" id="statusLog"></div>
+                </div>
+            </div>
+
+            <div class="results-section" id="resultsSection" style="display: none;">
+                <div class="results-header">
+                    <div class="section-header">
+                        <h2 class="section-title">Extraction Complete</h2>
+                        <div class="results-summary" id="resultsSummary"></div>
+                    </div>
+                    <button id="downloadCsv" class="cta-button primary">
+                        <span class="button-text">Download CSV</span>
+                        <span class="button-icon">📥</span>
+                    </button>
+                </div>
+                
+                <div class="results-table-container">
+                    <div class="table-wrapper">
+                        <table id="resultsTable" class="results-table">
+                            <thead>
+                                <tr>
+                                    <th>Address</th>
+                                    <th>Purchase Price</th>
+                                    <th>20% Down Payment</th>
+                                    <th>Est. Mortgage</th>
+                                    <th>Beds</th>
+                                    <th>Baths</th>
+                                    <th>Year Built</th>
+                                    <th>Sqft</th>
+                                    <th>Days Listed</th>
+                                    <th>Realtor Name</th>
+                                    <th>URL</th>
+                                </tr>
+                            </thead>
+                            <tbody id="resultsBody">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

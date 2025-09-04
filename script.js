@@ -732,17 +732,17 @@ class ZillaScraper {
             headers.join(','),
             ...this.results.map(result => [
                 `"${result.address}"`,
-                result.purchasePrice,
-                result.downPayment20,
-                result.estimatedMortgage,
-                result.totalMonthlyPayment,
+                `"${result.purchasePrice}"`,
+                `"${result.downPayment20}"`,
+                `"${result.estimatedMortgage}"`,
+                `"${result.totalMonthlyPayment}"`,
                 result.beds,
                 result.baths,
                 result.yearBuilt,
                 result.sqft,
                 result.daysListed,
                 `"${result.realtorName ? result.realtorName.trim() : 'INFO_UNAVAILABLE'}"`,
-                result.url
+                `"${result.url}"`
             ].join(','))
         ].join('\n');
 

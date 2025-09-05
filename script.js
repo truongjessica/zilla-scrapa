@@ -84,7 +84,16 @@ class ZillaScraper {
             .map(url => url.trim())
             .filter(url => url && this.isValidZillaUrl(url));
 
-        return urls;
+        // Remove duplicates while preserving order
+        const uniqueUrls = [...new Set(urls)];
+        
+        // Log if duplicates were found
+        if (urls.length !== uniqueUrls.length) {
+            const duplicateCount = urls.length - uniqueUrls.length;
+            console.log(`Removed ${duplicateCount} duplicate URL${duplicateCount > 1 ? 's' : ''}. Processing ${uniqueUrls.length} unique URLs.`);
+        }
+
+        return uniqueUrls;
     }
 
     isValidZillaUrl(url) {
@@ -100,10 +109,23 @@ class ZillaScraper {
     async startScraping() {
         if (this.isProcessing) return;
 
+        // Get original URL count for duplicate detection
+        const textInput = document.getElementById('urlText').value;
+        const originalUrls = textInput
+            .split(/[\s\n,]+/)
+            .map(url => url.trim())
+            .filter(url => url && this.isValidZillaUrl(url));
+            
         const urls = this.extractUrls();
         if (urls.length === 0) {
             alert('Please enter valid Zilla URLs');
             return;
+        }
+        
+        // Log duplicate removal info
+        if (originalUrls.length !== urls.length) {
+            const duplicateCount = originalUrls.length - urls.length;
+            this.logStatus(`Removed ${duplicateCount} duplicate URL${duplicateCount > 1 ? 's' : ''}. Processing ${urls.length} unique URLs.`, 'info');
         }
 
         this.isProcessing = true;
@@ -122,34 +144,50 @@ class ZillaScraper {
             this.currentIndex = i + 1;
             this.updateProgress();
             
-            try {
-                this.logStatus(`Processing ${i + 1}/${urls.length}: ${urls[i]}`, 'info');
-                const data = await this.scrapeProperty(urls[i]);
-                this.results.push(data);
-                this.logStatus(`✓ Successfully scraped: ${data.address || 'Unknown address'}`, 'success');
-            } catch (error) {
-                this.logStatus(`✗ Failed to scrape ${urls[i]}: ${error.message}`, 'error');
-                this.results.push({
-                    url: urls[i],
-                    status: 'ERROR',
-                    error: error.message,
-                    address: 'INFO_UNAVAILABLE',
-                    purchasePrice: 'INFO_UNAVAILABLE',
-                    downPayment20: 'INFO_UNAVAILABLE',
-                    estimatedMortgage: 'INFO_UNAVAILABLE',
-                    totalMonthlyPayment: 'INFO_UNAVAILABLE',
-                    beds: 'INFO_UNAVAILABLE',
-                    baths: 'INFO_UNAVAILABLE',
-                    yearBuilt: 'INFO_UNAVAILABLE',
-                    sqft: 'INFO_UNAVAILABLE',
-                    daysListed: 'INFO_UNAVAILABLE',
-                    realtorName: 'INFO_UNAVAILABLE'
-                });
+            let success = false;
+            let retryCount = 0;
+            const maxRetries = 2;
+            
+            while (!success && retryCount <= maxRetries) {
+                try {
+                    const retryText = retryCount > 0 ? ` (Retry ${retryCount}/${maxRetries})` : '';
+                    this.logStatus(`Processing ${i + 1}/${urls.length}: ${urls[i]}${retryText}`, 'info');
+                    
+                    const data = await this.scrapeProperty(urls[i]);
+                    this.results.push(data);
+                    this.logStatus(`✓ Successfully scraped: ${data.address || 'Unknown address'}`, 'success');
+                    success = true;
+                } catch (error) {
+                    retryCount++;
+                    if (retryCount <= maxRetries) {
+                        this.logStatus(`⚠ Attempt ${retryCount} failed for ${urls[i]}: ${error.message}`, 'info');
+                        await this.delay(5000); // Wait 5 seconds before retry to avoid rate limiting
+                    } else {
+                        this.logStatus(`✗ Failed to scrape ${urls[i]} after ${maxRetries} retries: ${error.message}`, 'error');
+                        this.results.push({
+                            url: urls[i],
+                            status: 'ERROR',
+                            error: error.message,
+                            address: 'INFO_UNAVAILABLE',
+                            purchasePrice: 'INFO_UNAVAILABLE',
+                            downPayment20: 'INFO_UNAVAILABLE',
+                            estimatedMortgage: 'INFO_UNAVAILABLE',
+                            totalMonthlyPayment: 'INFO_UNAVAILABLE',
+                            beds: 'INFO_UNAVAILABLE',
+                            baths: 'INFO_UNAVAILABLE',
+                            yearBuilt: 'INFO_UNAVAILABLE',
+                            sqft: 'INFO_UNAVAILABLE',
+                            daysListed: 'INFO_UNAVAILABLE',
+                            realtorName: 'INFO_UNAVAILABLE'
+                        });
+                    }
+                }
             }
 
-            // Rate limiting - wait 2 seconds between requests
+            // Rate limiting - wait 3-5 seconds between requests with randomization to avoid IP blocking
             if (i < urls.length - 1) {
-                await this.delay(2000);
+                const randomDelay = 3000 + Math.random() * 2000; // 3-5 seconds
+                await this.delay(randomDelay);
             }
         }
 
@@ -205,17 +243,26 @@ class ZillaScraper {
                 const response = await fetch(proxyUrl, {
                     headers: {
                         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                    }
+                    },
+                    timeout: 15000 // 15 second timeout
                 });
                 
                 if (response.ok) {
                     this.currentProxyIndex = proxyIndex;
-                    return await response.text();
+                    const text = await response.text();
+                    // Basic validation that we got HTML content
+                    if (text.length > 1000 && text.includes('<html')) {
+                        return text;
+                    }
+                    throw new Error('Invalid response content');
                 }
                 throw new Error(`HTTP ${response.status}`);
             } catch (error) {
                 lastError = error;
-                this.logStatus(`Proxy ${proxyIndex + 1} failed, trying next...`, 'info');
+                this.logStatus(`Proxy ${proxyIndex + 1} failed: ${error.message}, trying next...`, 'info');
+                
+                // Longer delay before trying next proxy to avoid rate limiting
+                await this.delay(1500);
             }
         }
         
@@ -750,7 +797,17 @@ class ZillaScraper {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `zilla-scrapa-results-${new Date().toISOString().split('T')[0]}.csv`;
+        
+        // Generate filename with local date and time
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const localDateTime = `${year}-${month}-${day}_${hours}-${minutes}`;
+        
+        a.download = `zilla-scrapa-results-${localDateTime}.csv`;
         a.click();
         window.URL.revokeObjectURL(url);
     }
